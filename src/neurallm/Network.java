@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Random;
 
 import org.jblas.DoubleMatrix;
+import org.jblas.MatrixFunctions;
 
 /**
  * A neural network language model
@@ -106,10 +107,48 @@ public class Network {
 	 * @return the log probability (in base 10) of the correct word
 	 */
 	public double feedForward(List<Integer> context, Integer nextWord){
-		// TODO: implement the feedforward activation process
-		return -10000.0;
+		DoubleMatrix z = DoubleMatrix.zeros(hidden.length, 1);
+		for (int i = 0; i < W.length; i++) {
+			z.addi(W[i].mmul(E.get(context.get(i))));
+		}
+		hidden = sigmoid(z);
+		DoubleMatrix s = Wout.mmul(hidden);
+		output = softmax(s);
+		return MatrixFunctions.log10(output.get(nextWord));
+	}
+
+	public static DoubleMatrix sigmoid(DoubleMatrix z) {
+		return MatrixFunctions.pow(MatrixFunctions.exp(z.neg()).add(1), -1);
+	}
+
+	public static DoubleMatrix sigmoidDeriv(DoubleMatrix z) {
+		return z.mul(z.neg().add(1));
 	}
 	
+	public static DoubleMatrix tanh(DoubleMatrix z) {
+		DoubleMatrix e1 = MatrixFunctions.exp(z);
+		DoubleMatrix e2 = MatrixFunctions.exp(z.neg());
+		return e1.sub(e2).div(e1.add(e2));
+	}
+	
+	public static DoubleMatrix tanhDeriv(DoubleMatrix z) {
+		DoubleMatrix t = tanh(z);
+		return t.mul(t).neg().add(1);
+	}
+	
+	public static DoubleMatrix relu(DoubleMatrix z) {
+		return z.max(0);
+	}
+	
+	public static DoubleMatrix reluDeriv(DoubleMatrix z) {
+		return z.gt(0);
+	}
+	
+	private static DoubleMatrix softmax(DoubleMatrix z) {
+		DoubleMatrix e = MatrixFunctions.exp(z);
+		return e.div(e.sum());
+	}
+
 	/**
 	 *  Using the output vector the system calculated in the feedForward function, 
 	 *  this function now needs to calculate error derivatives across the network 
@@ -120,9 +159,29 @@ public class Network {
 	 * @param alpha Learning rate
 	 */
 	public void backProp(List<Integer> context, Integer nextWord, double alpha){
-		// TODO: implement backpropagation
+		// calculate derivatives
+		errorOutput = output.sub(oneHot(nextWord, output.length));
+		errorWout = errorOutput.mmul(hidden.transpose());
+		errorHidden = Wout.transpose().mmul(errorOutput).mul(sigmoidDeriv(hidden));
+		DoubleMatrix[] Ew = new DoubleMatrix[W.length];
+		for (int i = 0; i < W.length; i++) {
+			Ew[i] = E.get(context.get(i));
+			errorW[i] = errorHidden.mmul(Ew[i].transpose());
+			errorInput[i] = W[i].transpose().mmul(errorHidden);
+		}
+		
+		// update weights
+		Wout.subi(errorWout.mul(alpha));
+		for (int i = 0; i < W.length; i++) {
+			W[i].subi(errorW[i].mul(alpha));
+			Ew[i].subi(errorInput[i].mul(alpha));
+		}
 	}
 	
+	private static DoubleMatrix oneHot(int i, int length) {
+		return DoubleMatrix.zeros(length).put(i, 1);
+	}
+
 	/**
 	 * Perform the gradient check on the backprop implementation
 	 */
